@@ -1,6 +1,6 @@
 {
   "name": "@nstep/ecis",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Rolldown and Vite plugin to Extract CSS-in-JS",
   "keywords": [
     "css-in-js"
