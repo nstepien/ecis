@@ -9,7 +9,7 @@ The plugin does not process the CSS in any way whatsoever, it is merely output i
 ## Installation
 
 ```
-npm install -D ecis
+npm install -D @nstep/ecis
 ```
 
 ## Usage
@@ -18,7 +18,7 @@ Source input:
 
 ```ts
 /* main.ts */
-import { css } from 'ecis';
+import { css } from '@nstep/ecis';
 import { redClassname } from './styles';
 
 const myButtonClassname = css`
@@ -32,7 +32,7 @@ const myButtonClassname = css`
 
 ```ts
 /* styles.ts */
-import { css } from 'ecis';
+import { css } from '@nstep/ecis';
 
 const color = 'red';
 
@@ -73,7 +73,7 @@ In `rolldown.config.ts`:
 
 ```ts
 import { defineConfig } from 'rolldown';
-import { ecis } from 'ecis/plugin';
+import { ecis } from '@nstep/ecis/plugin';
 
 export default defineConfig({
   // ...
@@ -85,7 +85,7 @@ In `vite.config.ts`:
 
 ```ts
 import { defineConfig } from 'vite';
-import { ecis } from 'ecis/plugin';
+import { ecis } from '@nstep/ecis/plugin';
 
 export default defineConfig({
   // ...

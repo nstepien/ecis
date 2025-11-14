@@ -33,8 +33,12 @@ function hashText(text: string): string {
  * Removes the import statement for 'ecis'
  */
 function removeImport(code: string): string {
-  // Remove import { css } from 'ecis';
-  return code.replace(/import\s+{\s*css\s*}\s+from\s+['"]ecis['"];?\s*/g, '');
+  // TODO: remove via ast
+  // Remove import { css } from '@nstep/ecis';
+  return code.replace(
+    /import\s+{\s*css\s*}\s+from\s+['"](@nstep\/|)ecis['"];?\s*/g,
+    '',
+  );
 }
 
 /**
