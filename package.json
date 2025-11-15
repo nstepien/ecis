@@ -16,6 +16,7 @@
   "license": "MIT",
   "author": "Nicolas Stepien",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./index.d.ts",
