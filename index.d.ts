@@ -2,7 +2,7 @@
  * @example
  * input:
  * ```js
- * import { css } from '@nstep/ecis';
+ * import { css } from 'ecij';
  *
  * const myClass = css`
  *   color: red;

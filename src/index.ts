@@ -30,15 +30,12 @@ function hashText(text: string): string {
 }
 
 /**
- * Removes the import statement for 'ecis'
+ * Removes the import statement for 'ecij'
  */
 function removeImport(code: string): string {
   // TODO: remove via ast
-  // Remove import { css } from '@nstep/ecis';
-  return code.replace(
-    /import\s+{\s*css\s*}\s+from\s+['"](@nstep\/|)ecis['"];?\s*/g,
-    '',
-  );
+  // Remove import { css } from 'ecij';
+  return code.replace(/import\s+{\s*css\s*}\s+from\s+['"]ecij['"];?\s*/g, '');
 }
 
 /**
@@ -49,7 +46,7 @@ function addCssImport(code: string, cssModuleId: string): string {
   return `import ${JSON.stringify(cssModuleId)};\n\n${code}`;
 }
 
-export function ecis({ classPrefix = 'css-' }: Configuration = {}): Plugin {
+export function ecij({ classPrefix = 'css-' }: Configuration = {}): Plugin {
   // Map to store extracted CSS content per source file
   // Key: virtual module ID, Value: css content
   const extractedCssPerFile = new Map<string, string>();
@@ -449,7 +446,7 @@ export function ecis({ classPrefix = 'css-' }: Configuration = {}): Plugin {
   }
 
   return {
-    name: 'ecis',
+    name: 'ecij',
 
     buildStart() {
       // Clear the cache when the server restarts
@@ -458,7 +455,7 @@ export function ecis({ classPrefix = 'css-' }: Configuration = {}): Plugin {
     },
 
     resolveId(id) {
-      // Intercept ecis imports to prevent Vite from trying to resolve them
+      // Intercept ecij imports to prevent Vite from trying to resolve them
       // They will be removed during transformation
       if (extractedCssPerFile.has(id)) {
         return { id };
@@ -485,8 +482,8 @@ export function ecis({ classPrefix = 'css-' }: Configuration = {}): Plugin {
         return null;
       }
 
-      // Check if the file references 'ecis'
-      if (!code.includes('ecis')) {
+      // Check if the file references 'ecij'
+      if (!code.includes('ecij')) {
         return null;
       }
 

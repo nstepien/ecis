@@ -1,6 +1,6 @@
-# ecis
+# ecij
 
-ecis (**E**xtract **C**SS-**i**n-**J**S) is a zero-runtime css-in-js plugin for [Rolldown](https://rolldown.rs/) and [Vite](https://vite.dev/).
+ecij (**E**xtract **C**SS-**i**n-**J**S) is a zero-runtime css-in-js plugin for [Rolldown](https://rolldown.rs/) and [Vite](https://vite.dev/).
 
 It achieves this via static analysis by using [oxc-parser](https://www.npmjs.com/package/oxc-parser), as such it is limited to static expressions. The plugin will ignore dynamic or complex expressions.
 
@@ -9,7 +9,7 @@ The plugin does not process the CSS in any way whatsoever, it is merely output i
 ## Installation
 
 ```
-npm install -D @nstep/ecis
+npm install -D ecij
 ```
 
 ## Usage
@@ -18,7 +18,7 @@ Source input:
 
 ```ts
 /* main.ts */
-import { css } from '@nstep/ecis';
+import { css } from 'ecij';
 import { redClassname } from './styles';
 
 const myButtonClassname = css`
@@ -32,7 +32,7 @@ const myButtonClassname = css`
 
 ```ts
 /* styles.ts */
-import { css } from '@nstep/ecis';
+import { css } from 'ecij';
 
 const color = 'red';
 
@@ -73,11 +73,11 @@ In `rolldown.config.ts`:
 
 ```ts
 import { defineConfig } from 'rolldown';
-import { ecis } from '@nstep/ecis/plugin';
+import { ecij } from 'ecij/plugin';
 
 export default defineConfig({
   // ...
-  plugins: [ecis()],
+  plugins: [ecij()],
 });
 ```
 
@@ -85,17 +85,17 @@ In `vite.config.ts`:
 
 ```ts
 import { defineConfig } from 'vite';
-import { ecis } from '@nstep/ecis/plugin';
+import { ecij } from 'ecij/plugin';
 
 export default defineConfig({
   // ...
-  plugins: [ecis()],
+  plugins: [ecij()],
 });
 ```
 
 ## Configuration
 
-The `ecis()` plugin accepts an optional configuration object:
+The `ecij()` plugin accepts an optional configuration object:
 
 ```ts
 export interface Configuration {
@@ -111,7 +111,7 @@ export interface Configuration {
 **Example:**
 
 ```ts
-ecis({
+ecij({
   classPrefix: 'lib-',
 });
 ```

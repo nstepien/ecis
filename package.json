@@ -1,17 +1,17 @@
 {
-  "name": "@nstep/ecis",
+  "name": "ecij",
   "version": "0.1.0",
   "description": "Rolldown and Vite plugin to Extract CSS-in-JS",
   "keywords": [
     "css-in-js"
   ],
-  "homepage": "https://github.com/nstepien/ecis#readme",
+  "homepage": "https://github.com/nstepien/ecij#readme",
   "bugs": {
-    "url": "https://github.com/nstepien/ecis/issues"
+    "url": "https://github.com/nstepien/ecij/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nstepien/ecis.git"
+    "url": "git+https://github.com/nstepien/ecij.git"
   },
   "license": "MIT",
   "author": "Nicolas Stepien",
