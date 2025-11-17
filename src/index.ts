@@ -2,9 +2,24 @@ import { createHash } from 'node:crypto';
 import { relative } from 'node:path';
 import { cwd } from 'node:process';
 import { parseSync, Visitor, type TaggedTemplateExpression } from 'oxc-parser';
+import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils';
 import type { Plugin, TransformPluginContext } from 'rolldown';
 
 export interface Configuration {
+  /**
+   * Include patterns for files to process.
+   * Can be a string, RegExp, or array of strings/RegExp.
+   * @default /\.[cm]?[jt]sx?$/
+   */
+  include?: string | RegExp | ReadonlyArray<string | RegExp>;
+
+  /**
+   * Exclude patterns for files to skip.
+   * Can be a string, RegExp, or array of strings/RegExp.
+   * @default [/\/node_modules\//, /\.d\.ts$/]
+   */
+  exclude?: string | RegExp | ReadonlyArray<string | RegExp>;
+
   /**
    * Prefix for generated CSS class names.
    * Should not be empty, as generated hashes may start with a digit, resulting in invalid CSS class names.
@@ -22,6 +37,10 @@ interface Declaration {
 
 // allow .js, .cjs, .mjs, .ts, .cts, .mts, .jsx, .tsx files
 const JS_TS_FILE_REGEX = /\.[cm]?[jt]sx?$/;
+
+// disallow /node_modules/ and .d.ts files
+const NODE_MODULES_REGEX = /\/node_modules\//;
+const D_TS_FILE_REGEX = /\.d\.ts$/;
 
 // Get the project root directory
 const PROJECT_ROOT = cwd();
@@ -47,7 +66,11 @@ function addCssImport(code: string, cssModuleId: string): string {
   return `import ${JSON.stringify(cssModuleId)};\n\n${code}`;
 }
 
-export function ecij({ classPrefix = 'css-' }: Configuration = {}): Plugin {
+export function ecij({
+  include = JS_TS_FILE_REGEX,
+  exclude = [NODE_MODULES_REGEX, D_TS_FILE_REGEX],
+  classPrefix = 'css-',
+}: Configuration = {}): Plugin {
   // Map to store extracted CSS content per source file
   // Key: virtual module ID, Value: css content
   const extractedCssPerFile = new Map<string, string>();
@@ -472,60 +495,62 @@ export function ecij({ classPrefix = 'css-' }: Configuration = {}): Plugin {
       return null;
     },
 
-    async transform(code, id) {
-      // Remove query parameters from the ID
-      const queryIndex = id.indexOf('?');
-      const cleanId = queryIndex === -1 ? id : id.slice(0, queryIndex);
+    transform: {
+      filter: {
+        id: {
+          include: makeIdFiltersToMatchWithQuery(include),
+          exclude: makeIdFiltersToMatchWithQuery(exclude),
+        },
+      },
+      async handler(code, id) {
+        // Remove query parameters from the ID
+        const queryIndex = id.indexOf('?');
+        const cleanId = queryIndex === -1 ? id : id.slice(0, queryIndex);
 
-      // Only process JavaScript/TypeScript files
-      // TODO: support `includes` option
-      if (!JS_TS_FILE_REGEX.test(cleanId)) {
-        return null;
-      }
+        // Check if the file references 'ecij'
+        if (!code.includes('ecij')) {
+          return null;
+        }
 
-      // Check if the file references 'ecij'
-      if (!code.includes('ecij')) {
-        return null;
-      }
+        // Extract CSS from the code
+        const {
+          transformedCode,
+          hasExtractions,
+          cssContent,
+          hasUnprocessedCssBlocks,
+        } = await extractCssFromCode(this, code, cleanId);
 
-      // Extract CSS from the code
-      const {
-        transformedCode,
-        hasExtractions,
-        cssContent,
-        hasUnprocessedCssBlocks,
-      } = await extractCssFromCode(this, code, cleanId);
+        if (!hasExtractions) {
+          return null;
+        }
 
-      if (!hasExtractions) {
-        return null;
-      }
+        let finalCode = transformedCode;
 
-      let finalCode = transformedCode;
+        // Avoid outputing empty CSS modules
+        if (cssContent !== '') {
+          // Generate CSS module ID for this file
+          // A hash of the CSS content is created to make HMR work
+          // Use the original file path with .css extension
+          // e.g., /src/components/Button.tsx -> /src/components/Button.tsx.hash.css
+          const hash = hashText(cssContent);
+          const cssModuleId = `${cleanId}.${hash}.css`;
 
-      // Avoid outputing empty CSS modules
-      if (cssContent !== '') {
-        // Generate CSS module ID for this file
-        // A hash of the CSS content is created to make HMR work
-        // Use the original file path with .css extension
-        // e.g., /src/components/Button.tsx -> /src/components/Button.tsx.hash.css
-        const hash = hashText(cssContent);
-        const cssModuleId = `${cleanId}.${hash}.css`;
+          // Store the CSS extractions for this file
+          extractedCssPerFile.set(cssModuleId, cssContent);
 
-        // Store the CSS extractions for this file
-        extractedCssPerFile.set(cssModuleId, cssContent);
+          // Add CSS module import
+          finalCode = addCssImport(finalCode, cssModuleId);
+        }
 
-        // Add CSS module import
-        finalCode = addCssImport(finalCode, cssModuleId);
-      }
+        // TODO: let rolldown tree-shake it?
+        // Only remove the css import if we processed all css`` blocks
+        if (!hasUnprocessedCssBlocks) {
+          finalCode = removeImport(finalCode);
+        }
 
-      // TODO: let rolldown tree-shake it?
-      // Only remove the css import if we processed all css`` blocks
-      if (!hasUnprocessedCssBlocks) {
-        finalCode = removeImport(finalCode);
-      }
-
-      // TODO return sourcemaps
-      return finalCode;
+        // TODO return sourcemaps
+        return finalCode;
+      },
     },
   };
 }
