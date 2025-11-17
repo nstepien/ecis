@@ -120,6 +120,7 @@ ecij({
 
 - Tests
 - Support `include`/`exclude` configuration
+  - exclude `node_modules` by default
 - Scope handling
 - Validate that the `css` used refers to
 - Full import/export handling (default/namespace import/export)
