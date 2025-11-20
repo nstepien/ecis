@@ -1,7 +1,8 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "isolatedDeclarations": false,
     "types": ["node"]
   },
-  "include": ["test/**/*"]
+  "include": ["rolldown.config.ts"]
 }
