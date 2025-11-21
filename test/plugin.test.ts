@@ -73,6 +73,7 @@ test('comprehensive CSS-in-JS patterns', async () => {
     .css-873c0af7 {
       /* imported */
       background: white;
+      width: 40.123px;
 
       &.css-348273b1 {
         border-color: red;
@@ -129,11 +130,18 @@ test.fails('ignore non-ecij css tag functions', async () => {
   const result = await buildWithPlugin(fixturePath);
 
   expect(result.js).toMatchInlineSnapshot(`
-    "//#region test/fixtures/no-ecij.input.ts
+    "//#region test/fixtures/fake.ts
+    function unrelated(_) {
+    	return "";
+    }
+
+    //#endregion
+    //#region test/fixtures/no-ecij.input.ts
+    const unknown = unrelated\`this is not css\`;
     const buttonClass = "css-25e9670b";
 
     //#endregion
-    export { buttonClass };"
+    export { buttonClass, unknown };"
   `);
 
   // No CSS should be generated

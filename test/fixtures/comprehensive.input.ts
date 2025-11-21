@@ -1,5 +1,5 @@
 import { css } from 'ecij';
-import { bgColor as background, redClass } from './imported-style';
+import { bgColor as background, redClass, width } from './imported-style';
 
 // Basic CSS transformation
 export const buttonClass = css`
@@ -31,6 +31,7 @@ const highlightedClass = css`
 export const importedClass = css`
   /* imported */
   background: ${background};
+  width: ${width}px;
 
   &.${redClass} {
     border-color: red;
