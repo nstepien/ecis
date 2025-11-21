@@ -11,7 +11,7 @@ The plugin does not process the CSS in any way whatsoever, it is merely output i
 
 ## Installation
 
-```
+```bash
 npm install -D ecij
 ```
 
@@ -133,9 +133,43 @@ ecij({
 });
 ```
 
+## Development
+
+### Building
+
+```bash
+npm run build
+```
+
+### Formatting
+
+```bash
+npm run format
+```
+
+### Type Checking
+
+```bash
+npm run typecheck
+```
+
+### Running Tests
+
+The project uses **integration tests** with **inline snapshot testing** to validate transformations.
+
+```bash
+# Run tests once
+npm test
+
+# Run tests with coverage
+npm run test:coverage
+
+# Update inline snapshots after intentional changes
+npm test -- -u
+```
+
 ## TODO
 
-- Tests
 - Scope handling
 - Validate that the `css` used refers to the ecij export
 - Full import/export handling (default/namespace import/export)
