@@ -21,7 +21,7 @@ async function buildWithPlugin(input: string, pluginOptions?: Configuration) {
   };
 }
 
-test.only('comprehensive CSS-in-JS patterns', async () => {
+test('comprehensive CSS-in-JS patterns', async () => {
   const fixturePath = import.meta.resolve('./fixtures/comprehensive.input.ts');
   const result = await buildWithPlugin(fixturePath);
 
