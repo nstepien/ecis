@@ -29,10 +29,19 @@ export interface Configuration {
 }
 
 interface Declaration {
-  index: number;
-  varName: string | undefined;
+  className: string;
   node: TaggedTemplateExpression;
   hasInterpolations: boolean;
+}
+
+interface ParsedFileInfo {
+  declarations: Declaration[];
+  localIdentifiers: ReadonlyMap<string, string>;
+  importedIdentifiers: ReadonlyMap<
+    string,
+    { source: string; imported: string }
+  >;
+  exportNameToValueMap: ReadonlyMap<string, string>;
 }
 
 // allow .js, .cjs, .mjs, .ts, .cts, .mts, .jsx, .tsx files
@@ -71,76 +80,64 @@ export function ecij({
   exclude = [NODE_MODULES_REGEX, D_TS_FILE_REGEX],
   classPrefix = 'css-',
 }: Configuration = {}): Plugin {
+  const parsedFileInfoCache = new Map<string, ParsedFileInfo>();
+
   // Map to store extracted CSS content per source file
   // Key: virtual module ID, Value: css content
   const extractedCssPerFile = new Map<string, string>();
 
-  // Cache for resolved imported class names
-  const importedClassNameCache = new Map<string, string>();
-
   /**
-   * Generates a consistent, unique class name based on file path and variable name or index
+   * Parses a file and extracts all relevant information in a single pass
    */
-  function generateClassName(
+  async function parseFile(
+    context: TransformPluginContext,
     filePath: string,
-    index: number,
-    variableName: string | undefined,
-  ): string {
+    code?: string,
+  ): Promise<ParsedFileInfo> {
+    // The code loaded from `readFile` might not be identical
+    // to the code passed in after it has been processed by other plugins,
+    // as such we cannot rely on the position of declarations being the same,
+    // and the new code should be parsed.
+    if (code === undefined && parsedFileInfoCache.has(filePath)) {
+      return parsedFileInfoCache.get(filePath)!;
+    }
+
     // Convert absolute path to project-relative path and normalize to Unix format
     // to ensure consistent hashes across different build environments (Windows/Unix)
     const relativePath = relative(PROJECT_ROOT, filePath).replaceAll('\\', '/');
 
-    // Create a hash from the relative file path, index,
-    // and identifier for consistency across builds.
-    // The index is always used to avoid collisions with other variables
-    // with the same name in the same file.
-    const hash = hashText(`${relativePath}:${index}:${variableName}`);
-
-    return `${classPrefix}${hash}`;
-  }
-
-  /**
-   * Resolves an imported class name by reading and processing the source file
-   */
-  async function resolveImportedClassName(
-    context: TransformPluginContext,
-    importerPath: string,
-    importSource: string,
-    exportedName: string,
-  ): Promise<string | undefined> {
-    // Resolve the import path relative to the importer
-    const resolvedId = await context.resolve(importSource, importerPath);
-
-    if (resolvedId == null) return;
-
-    const resolvedPath = resolvedId.id;
-
-    // Check cache
-    const cacheKey = `${resolvedPath}:${exportedName}`;
-
-    if (importedClassNameCache.has(cacheKey)) {
-      // TODO: turn this map into a map of maps (filePath => name => className)
-      //       so we can avoid computing the same file multiple times.
-      //       We should also cache the results of `extractCssFromCode`.
-      return importedClassNameCache.get(cacheKey)!;
-    }
-
     // Read the source file
-    const sourceCode = await context.fs.readFile(resolvedPath, {
-      encoding: 'utf8',
-    });
+    const sourceText =
+      code ?? (await context.fs.readFile(filePath, { encoding: 'utf8' }));
 
-    // Parse to find the exported variable
-    const parseResult = parseSync(resolvedPath, sourceCode);
+    const parseResult = parseSync(filePath, sourceText);
+    const importedIdentifiers = new Map<
+      string,
+      { source: string; imported: string }
+    >();
+
+    // Collect imports
+    for (const staticImport of parseResult.module.staticImports) {
+      for (const entry of staticImport.entries) {
+        // TODO: support default and namespace imports
+        if (entry.importName.kind === 'Name') {
+          importedIdentifiers.set(entry.localName.value, {
+            source: staticImport.moduleRequest.value,
+            imported: entry.importName.name!,
+          });
+        }
+      }
+    }
 
     const localNameToExportedNameMap = new Map<string, string>();
 
+    // Collect exports
     for (const staticExport of parseResult.module.staticExports) {
       for (const entry of staticExport.entries) {
         // TODO: handle re-exports
         if (entry.importName.kind !== 'None') continue;
 
-        // TODO: handle other export types (default, *)
+        // TODO: support default and namespace exports
         if (
           entry.exportName.kind === 'Name' &&
           entry.localName.kind === 'Name'
@@ -153,25 +150,52 @@ export function ecij({
     }
 
     const declarations: Declaration[] = [];
+    const localIdentifiers = new Map<string, string>();
+    const exportNameToValueMap = new Map<string, string>();
 
     const taggedTemplateExpressionFromVariableDeclarator =
       new Set<TaggedTemplateExpression>();
 
-    function handleTaggedTemplateExpression(
-      varName: string | undefined,
-      node: TaggedTemplateExpression,
-    ) {
-      if (node.tag.type === 'Identifier' && node.tag.name === 'css') {
-        // Store info about this declaration
-        declarations.push({
-          index: declarations.length,
-          varName,
-          node,
-          hasInterpolations: node.quasi.expressions.length > 0,
-        });
+    function recordIdentifierWithValue(localName: string, value: string) {
+      localIdentifiers.set(localName, value);
+
+      if (localNameToExportedNameMap.has(localName)) {
+        const exportedName = localNameToExportedNameMap.get(localName)!;
+        exportNameToValueMap.set(exportedName, value);
       }
     }
 
+    function handleTaggedTemplateExpression(
+      localName: string | undefined,
+      node: TaggedTemplateExpression,
+    ) {
+      if (!(node.tag.type === 'Identifier' && node.tag.name === 'css')) {
+        return;
+      }
+
+      const index = declarations.length;
+
+      // Create a hash from the relative file path, index,
+      // and identifier for consistency across builds.
+      // The index is always used to avoid collisions with other variables
+      // with the same name in the same file.
+      const hash = hashText(`${relativePath}:${index}:${localName}`);
+
+      const className = `${classPrefix}${hash}`;
+
+      declarations.push({
+        className,
+        node,
+        hasInterpolations: node.quasi.expressions.length > 0,
+      });
+
+      // Record generated class names for css declarations
+      if (localName !== undefined) {
+        recordIdentifierWithValue(localName, className);
+      }
+    }
+
+    // Visit AST to collect declarations and literal values
     const visitor = new Visitor({
       VariableDeclarator(node) {
         if (node.init === null || node.id.type !== 'Identifier') return;
@@ -186,50 +210,36 @@ export function ecij({
           (typeof node.init.value === 'string' ||
             typeof node.init.value === 'number')
         ) {
-          const exportedName = localNameToExportedNameMap.get(localName);
-
-          if (exportedName === undefined) return;
-
-          const cacheKey = `${resolvedPath}:${exportedName}`;
-          importedClassNameCache.set(cacheKey, String(node.init.value));
+          const value = String(node.init.value);
+          recordIdentifierWithValue(localName, value);
         }
       },
-      TaggedTemplateExpression(node) {
-        if (taggedTemplateExpressionFromVariableDeclarator.has(node)) {
-          return;
-        }
 
-        // No variable name for inline expressions
-        handleTaggedTemplateExpression(undefined, node);
+      TaggedTemplateExpression(node) {
+        if (!taggedTemplateExpressionFromVariableDeclarator.has(node)) {
+          // No variable name for inline expressions
+          handleTaggedTemplateExpression(undefined, node);
+        }
       },
     });
 
     visitor.visit(parseResult.program);
 
-    for (const declaration of declarations) {
-      const localName = declaration.varName;
+    const parsedInfo: ParsedFileInfo = {
+      declarations,
+      localIdentifiers,
+      importedIdentifiers,
+      exportNameToValueMap,
+    };
 
-      if (localName === undefined) continue;
+    parsedFileInfoCache.set(filePath, parsedInfo);
 
-      const exportedName = localNameToExportedNameMap.get(localName);
-
-      if (exportedName === undefined) continue;
-
-      const cacheKey = `${resolvedPath}:${exportedName}`;
-      const className = generateClassName(
-        resolvedPath,
-        declaration.index,
-        localName,
-      );
-      importedClassNameCache.set(cacheKey, className);
-    }
-
-    return importedClassNameCache.get(cacheKey);
+    return parsedInfo;
   }
 
   /**
    * Extracts CSS from template literals in the source code using AST parsing
-   * Supports interpolations of class names (both local and imported)
+   * Supports interpolations of strings and numbers (both local and imported)
    */
   async function extractCssFromCode(
     context: TransformPluginContext,
@@ -241,6 +251,9 @@ export function ecij({
     cssContent: string;
     hasUnprocessedCssBlocks: boolean;
   }> {
+    const { declarations, localIdentifiers, importedIdentifiers } =
+      await parseFile(context, filePath, code);
+
     const cssExtractions: Array<{
       className: string;
       cssContent: string;
@@ -251,126 +264,52 @@ export function ecij({
       end: number;
       className: string;
     }> = [];
-    // Maps variable name to generated class name
-    const localClassNames = new Map<string, string>();
-    // Maps imported identifier to source file
-    const imports = new Map<
-      string,
-      {
-        source: string;
-        imported: string;
-      }
-    >();
 
-    // Helper to resolve a class name from an identifier
-    function resolveClassName(
+    // Helper to resolve a value from an identifier
+    async function resolveValue(
       identifierName: string,
-    ): string | undefined | Promise<string | undefined> {
-      // Check if it's a local class name
-      if (localClassNames.has(identifierName)) {
-        return localClassNames.get(identifierName)!;
+    ): Promise<string | undefined> {
+      // Check if it's a local identifier
+      if (localIdentifiers.has(identifierName)) {
+        return localIdentifiers.get(identifierName)!;
       }
 
-      // Check if it's an imported class name
-      if (imports.has(identifierName)) {
-        const { source, imported } = imports.get(identifierName)!;
-        return resolveImportedClassName(context, filePath, source, imported);
-      }
+      // Check if it's an imported identifier
+      if (importedIdentifiers.has(identifierName)) {
+        const { source, imported } = importedIdentifiers.get(identifierName)!;
 
-      return undefined;
-    }
+        // Resolve the import path relative to the importer
+        const resolvedId = await context.resolve(source, filePath);
 
-    // Parse the code into an AST
-    const parseResult = parseSync(filePath, code);
+        if (resolvedId != null) {
+          const { exportNameToValueMap } = await parseFile(
+            context,
+            resolvedId.id,
+          );
 
-    // First pass: collect import declarations
-    for (const staticImport of parseResult.module.staticImports) {
-      for (const entry of staticImport.entries) {
-        // TODO: support default and namespace imports
-        if (entry.importName.kind === 'Name') {
-          imports.set(entry.localName.value, {
-            source: staticImport.moduleRequest.value,
-            imported: entry.importName.name!,
-          });
+          return exportNameToValueMap.get(imported);
         }
       }
+
+      return;
     }
-
-    const declarations: Declaration[] = [];
-
-    const taggedTemplateExpressionFromVariableDeclarator =
-      new Set<TaggedTemplateExpression>();
-
-    function handleTaggedTemplateExpression(
-      varName: string | undefined,
-      node: TaggedTemplateExpression,
-    ) {
-      if (node.tag.type === 'Identifier' && node.tag.name === 'css') {
-        // Store info about this declaration
-        declarations.push({
-          index: declarations.length,
-          varName,
-          node,
-          hasInterpolations: node.quasi.expressions.length > 0,
-        });
-      }
-    }
-
-    // Do the tracking pass first to build localClassNames map
-    const visitor = new Visitor({
-      VariableDeclarator(node) {
-        if (node.init === null || node.id.type !== 'Identifier') return;
-
-        const localName = node.id.name;
-
-        if (node.init.type === 'TaggedTemplateExpression') {
-          taggedTemplateExpressionFromVariableDeclarator.add(node.init);
-          handleTaggedTemplateExpression(localName, node.init);
-        } else if (
-          node.init.type === 'Literal' &&
-          (typeof node.init.value === 'string' ||
-            typeof node.init.value === 'number')
-        ) {
-          localClassNames.set(localName, String(node.init.value));
-        }
-      },
-      TaggedTemplateExpression(node) {
-        if (taggedTemplateExpressionFromVariableDeclarator.has(node)) {
-          return;
-        }
-
-        // No variable name for inline expressions
-        handleTaggedTemplateExpression(undefined, node);
-      },
-    });
-
-    visitor.visit(parseResult.program);
 
     // Helper to add a processed CSS declaration
     function addProcessedDeclaration(
       declaration: Declaration,
       cssContent: string,
     ) {
-      const className = generateClassName(
-        filePath,
-        declaration.index,
-        declaration.varName,
-      );
-
-      // Only store in localClassNames if it has a variable name
-      if (declaration.varName) {
-        localClassNames.set(declaration.varName, className);
-      }
+      const { className, node } = declaration;
 
       cssExtractions.push({
         className,
         cssContent: cssContent.trim(),
-        sourcePosition: declaration.node.start,
+        sourcePosition: node.start,
       });
 
       replacements.push({
-        start: declaration.node.start,
-        end: declaration.node.end,
+        start: node.start,
+        end: node.end,
         className,
       });
     }
@@ -406,15 +345,15 @@ export function ecij({
           }
 
           const identifierName = expression.name;
-          const resolvedClassName = await resolveClassName(identifierName);
+          const resolvedValue = await resolveValue(identifierName);
 
-          if (resolvedClassName === undefined) {
+          if (resolvedValue === undefined) {
             // Cannot resolve - skip this entire css`` block
             allResolved = false;
             break;
           }
 
-          cssContent += resolvedClassName;
+          cssContent += resolvedValue;
         }
       }
 
@@ -473,10 +412,10 @@ export function ecij({
   return {
     name: 'ecij',
 
-    buildStart() {
-      // Clear the cache when the server restarts
+    buildEnd() {
+      // Clear caches between builds
+      parsedFileInfoCache.clear();
       extractedCssPerFile.clear();
-      importedClassNameCache.clear();
     },
 
     resolveId(id) {
