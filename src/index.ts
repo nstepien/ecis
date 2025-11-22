@@ -187,7 +187,7 @@ export function ecij({
       declarations.push({
         className,
         node,
-        hasInterpolations: node.quasi.expressions.length > 0,
+        hasInterpolations: node.quasi.expressions.length !== 0,
       });
 
       // Record generated class names for css declarations
@@ -241,6 +241,7 @@ export function ecij({
     transformedCode: string;
     hasExtractions: boolean;
     cssContent: string;
+    modulesWithSideEffects: Set<string>;
   }> {
     const { declarations, localIdentifiers, importedIdentifiers } =
       await parseFile(context, filePath, code);
@@ -255,6 +256,7 @@ export function ecij({
       end: number;
       className: string;
     }> = [];
+    const modulesWithSideEffects = new Set<string>();
 
     // Helper to resolve a value from an identifier
     async function resolveValue(
@@ -273,12 +275,19 @@ export function ecij({
         const resolvedId = await context.resolve(source, filePath);
 
         if (resolvedId != null) {
-          const { exportNameToValueMap } = await parseFile(
+          const { id } = resolvedId;
+
+          const { declarations, exportNameToValueMap } = await parseFile(
             context,
-            resolvedId.id,
+            id,
           );
 
-          return exportNameToValueMap.get(imported);
+          if (exportNameToValueMap.has(imported)) {
+            if (declarations.length !== 0) {
+              modulesWithSideEffects.add(id);
+            }
+            return exportNameToValueMap.get(imported)!;
+          }
         }
       }
 
@@ -359,6 +368,7 @@ export function ecij({
         transformedCode: code,
         hasExtractions: false,
         cssContent: '',
+        modulesWithSideEffects,
       };
     }
 
@@ -391,6 +401,7 @@ export function ecij({
       transformedCode,
       hasExtractions: true,
       cssContent,
+      modulesWithSideEffects,
     };
   }
 
@@ -404,11 +415,20 @@ export function ecij({
     },
 
     resolveId(id) {
-      // Intercept ecij imports to prevent Vite from trying to resolve them
-      // They will be removed during transformation
+      // Ensure CSS modules are treated as having side effects
       if (extractedCssPerFile.has(id)) {
-        return { id };
+        return id;
       }
+
+      // Ensure JS modules with CSS extractions are included,
+      // otherwise they may be tree-shaken away if
+      // all their exports are evaluated away
+      if (parsedFileInfoCache.has(id)) {
+        if (parsedFileInfoCache.get(id)!.declarations.length !== 0) {
+          return id;
+        }
+      }
+
       return null;
     },
 
@@ -417,6 +437,7 @@ export function ecij({
       if (extractedCssPerFile.has(id)) {
         return extractedCssPerFile.get(id)!;
       }
+
       return null;
     },
 
@@ -438,8 +459,12 @@ export function ecij({
         const cleanId = queryIndex === -1 ? id : id.slice(0, queryIndex);
 
         // Extract CSS from the code
-        const { transformedCode, hasExtractions, cssContent } =
-          await extractCssFromCode(this, code, cleanId);
+        const {
+          transformedCode,
+          hasExtractions,
+          cssContent,
+          modulesWithSideEffects,
+        } = await extractCssFromCode(this, code, cleanId);
 
         if (!hasExtractions) {
           return null;
@@ -460,12 +485,24 @@ export function ecij({
         // Store the CSS extractions for this file
         extractedCssPerFile.set(cssModuleId, cssContent);
 
+        const importStatements: string[] = [];
+
+        // Include side-effect imports for modules from which class names were imported.
+        // Otherwise, the original imports may be treated as being free of side-effects,
+        // leading those imports to be omitted from the final bundle,
+        // along with their extracted CSS.
+        for (const id of modulesWithSideEffects) {
+          importStatements.push(`import ${JSON.stringify(id)};\n`);
+        }
+
         // use JSON.stringify to properly escape the module ID,
         // including \ delimiters on Windows.
-        const importStatement = `import ${JSON.stringify(cssModuleId)};`;
+        importStatements.push(`import ${JSON.stringify(cssModuleId)}\n;`);
 
-        // Add CSS module import at the top of the file.
-        return `${importStatement}\n${transformedCode}`;
+        const importStatement = importStatements.join('');
+
+        // Add side-effect/CSS module imports at the top of the file.
+        return `${importStatement}${transformedCode}`;
       },
     },
   };
