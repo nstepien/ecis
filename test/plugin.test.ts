@@ -74,6 +74,8 @@ test('comprehensive CSS-in-JS patterns', async () => {
       /* imported */
       background: white;
       width: 40.123px;
+      font-size: 16px;
+      font-weight: bold;
 
       &.css-348273b1 {
         border-color: red;
@@ -124,13 +126,15 @@ test('generate hash based on file path relative to root and file name to avoid n
   `);
 });
 
-// TODO
-test.fails('ignore non-ecij css tag functions', async () => {
+test('ignore non-ecij css tag functions', async () => {
   const fixturePath = import.meta.resolve('./fixtures/no-ecij.input.ts');
   const result = await buildWithPlugin(fixturePath);
 
   expect(result.js).toMatchInlineSnapshot(`
     "//#region test/fixtures/fake.ts
+    function css(_) {
+    	return "";
+    }
     function unrelated(_) {
     	return "";
     }
@@ -138,10 +142,19 @@ test.fails('ignore non-ecij css tag functions', async () => {
     //#endregion
     //#region test/fixtures/no-ecij.input.ts
     const unknown = unrelated\`this is not css\`;
-    const buttonClass = "css-25e9670b";
+    const buttonClass = css\`
+      color: blue;
+      padding: 10px;
+    \`;
+    function getButtonClass() {
+    	return css\`
+        background: green;
+        padding: 8px 16px;
+      \`;
+    }
 
     //#endregion
-    export { buttonClass, unknown };"
+    export { buttonClass, getButtonClass, unknown };"
   `);
 
   // No CSS should be generated
