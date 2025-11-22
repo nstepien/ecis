@@ -32,8 +32,6 @@ test('comprehensive CSS-in-JS patterns', async () => {
   // - Imported class name interpolation
   // - Nested interpolations
   // - Inline CSS (not assigned to variable)
-  // TODO:
-  // - preserve redClass in the CSS output
   expect(result.js).toMatchInlineSnapshot(`
     "//#region test/fixtures/comprehensive.input.ts
     const buttonClass = "css-39ccb25d";
@@ -49,7 +47,11 @@ test('comprehensive CSS-in-JS patterns', async () => {
     export { buttonClass, getButtonClass, importedClass, nestedClass, primaryClass, secondaryClass };"
   `);
   expect(result.css).toMatchInlineSnapshot(`
-    ".css-39ccb25d {
+    ".css-348273b1 {
+      /* red class */
+      color: red;
+    }
+    .css-39ccb25d {
       /* button */
       border: 1px solid blue;
       padding: 10px;

@@ -7,6 +7,7 @@ export const width = 40.123;
 const backgroundColor = 'white';
 
 export const redClass = css`
+  /* red class */
   color: ${red};
 `;
 
